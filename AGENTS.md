@@ -38,3 +38,4 @@ Always run `make lint` after making changes.
 - If you are writing the same fixture twice put it in the `conftest.py`
 - Use `conftest.py` fixtures (`sample_state`) and `tmp_path` for filesystem tests
 - Test files: `test_<module>.py` matching source module, one class per feature area
+- ALWAYS write tests after adding new logic

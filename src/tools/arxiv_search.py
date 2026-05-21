@@ -1,8 +1,16 @@
 """arXiv API tool for searching recent AI/ML papers."""
 
+import asyncio
+import logging
+import random
 from datetime import date, timedelta
 
 import httpx
+
+logger = logging.getLogger(__name__)
+
+MAX_RETRIES = 5
+INITIAL_BACKOFF_SECONDS = 3.0
 
 
 async def arxiv_search(
@@ -44,11 +52,51 @@ async def arxiv_search(
         "sortOrder": "descending",
     }
 
+    last_exception: Exception | None = None
     async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(url, params=params)
-        response.raise_for_status()
+        for attempt in range(MAX_RETRIES):
+            response = await client.get(url, params=params)
 
-    return _parse_arxiv_response(response.text)
+            if response.status_code == 429:
+                if attempt == MAX_RETRIES - 1:
+                    msg = "arXiv API rate-limited: all retries exhausted"
+                    raise RuntimeError(msg)
+                backoff = INITIAL_BACKOFF_SECONDS * (2 ** attempt) * random.uniform(0.5, 1.5)
+                logger.warning(
+                    "arXiv API rate-limited (429), retrying in %.1fs (attempt %d/%d)",
+                    backoff,
+                    attempt + 1,
+                    MAX_RETRIES,
+                )
+                await asyncio.sleep(backoff)
+                continue
+
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                last_exception = exc
+                if exc.response.status_code >= 500:
+                    if attempt == MAX_RETRIES - 1:
+                        raise
+                    backoff = INITIAL_BACKOFF_SECONDS * (2 ** attempt) * random.uniform(0.5, 1.5)
+                    logger.warning(
+                        "arXiv API server error (%d), retrying in %.1fs (attempt %d/%d)",
+                        exc.response.status_code,
+                        backoff,
+                        attempt + 1,
+                        MAX_RETRIES,
+                    )
+                    await asyncio.sleep(backoff)
+                    continue
+                raise
+
+            return _parse_arxiv_response(response.text)
+
+    # All retries exhausted for 5xx — raise the last error
+    if last_exception:
+        raise last_exception
+    msg = "arXiv API: all retries exhausted"
+    raise RuntimeError(msg)
 
 
 def _parse_arxiv_response(xml: str) -> str:
