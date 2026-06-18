@@ -42,7 +42,13 @@ class TestRssReader:
     @pytest.mark.asyncio
     async def test_rss_reader_with_mock_feed(self) -> None:
         """Should read and format RSS feed entries."""
+        from datetime import date, timedelta
         from time import struct_time
+
+        recent = date.today() - timedelta(days=2)
+        recent_struct = struct_time(
+            (recent.year, recent.month, recent.day, 0, 0, 0, 0, 0, 0)
+        )
 
         mock_feed = MagicMock()
         mock_feed.bozo = False
@@ -52,7 +58,7 @@ class TestRssReader:
                 "title": "AI Breakthrough",
                 "link": "https://example.com/breakthrough",
                 "summary": "A major AI breakthrough was announced.",
-                "published_parsed": struct_time((2026, 5, 15, 0, 0, 0, 0, 0, 0)),
+                "published_parsed": recent_struct,
             },
         ]
 

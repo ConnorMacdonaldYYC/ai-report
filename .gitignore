@@ -12,7 +12,8 @@ wheels/
 # Generated output
 output/
 
+# Environment variables
+.env
+
 # Local tool config
-.agents/
-opencode.json
 skills-lock.json

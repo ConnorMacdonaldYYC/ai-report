@@ -15,6 +15,7 @@ def main() -> None:
     )
 
     settings = get_settings()
+    settings.configure()
     result = asyncio.run(run_report(settings))
 
     print(f"\n{'='*60}")

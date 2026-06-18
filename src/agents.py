@@ -37,6 +37,7 @@ industry_overview_agent = Agent(
     settings.sub_agent_model_string,
     output_type=SectionResult,
     system_prompt=INDUSTRY_OVERVIEW_SYSTEM_PROMPT,
+    output_retries=3,
     defer_model_check=True,
 )
 
@@ -82,6 +83,7 @@ research_agent = Agent(
     settings.sub_agent_model_string,
     output_type=SectionResult,
     system_prompt=RESEARCH_SYSTEM_PROMPT,
+    output_retries=3,
     defer_model_check=True,
 )
 
@@ -112,6 +114,7 @@ community_news_agent = Agent(
     settings.sub_agent_model_string,
     output_type=SectionResult,
     system_prompt=COMMUNITY_NEWS_SYSTEM_PROMPT,
+    output_retries=3,
     defer_model_check=True,
 )
 
@@ -157,6 +160,7 @@ coding_agents_agent = Agent(
     settings.sub_agent_model_string,
     output_type=SectionResult,
     system_prompt=CODING_AGENTS_SYSTEM_PROMPT,
+    output_retries=3,
     defer_model_check=True,
 )
 
@@ -186,6 +190,7 @@ manager_agent = Agent(
     system_prompt=MANAGER_SYSTEM_PROMPT,
     instructions=get_manager_instructions(settings),
     model_settings={"max_tokens": settings.max_output_tokens},
+    output_retries=3,
     defer_model_check=True,
 )
 
@@ -200,10 +205,8 @@ async def industry_overview(ctx: RunContext[None], task: str) -> str:
         task: Specific focus or instructions for this section.
     """
     result = await industry_overview_agent.run(task, usage=ctx.usage)
-    section = result.output
-    return f"{section.content}\n\nSources:\n" + "\n".join(
-        f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources)
-    )
+    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
+    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
 
 
 @manager_agent.tool
@@ -216,10 +219,8 @@ async def research(ctx: RunContext[None], task: str) -> str:
         task: Specific focus or instructions for this section.
     """
     result = await research_agent.run(task, usage=ctx.usage)
-    section = result.output
-    return f"{section.content}\n\nSources:\n" + "\n".join(
-        f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources)
-    )
+    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
+    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
 
 
 @manager_agent.tool
@@ -232,10 +233,8 @@ async def community_news(ctx: RunContext[None], task: str) -> str:
         task: Specific focus or instructions for this section.
     """
     result = await community_news_agent.run(task, usage=ctx.usage)
-    section = result.output
-    return f"{section.content}\n\nSources:\n" + "\n".join(
-        f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources)
-    )
+    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
+    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
 
 
 @manager_agent.tool
@@ -248,10 +247,8 @@ async def coding_agents(ctx: RunContext[None], task: str) -> str:
         task: Specific focus or instructions for this section.
     """
     result = await coding_agents_agent.run(task, usage=ctx.usage)
-    section = result.output
-    return f"{section.content}\n\nSources:\n" + "\n".join(
-        f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources)
-    )
+    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
+    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
 
 
 # ── Evaluator Agent (standalone, not a tool on the manager) ────────────────
@@ -260,5 +257,6 @@ evaluator_agent = Agent(
     settings.evaluator_model_string,
     output_type=EvalResult,
     system_prompt=get_evaluator_system_prompt(settings),
+    output_retries=3,
     defer_model_check=True,
 )

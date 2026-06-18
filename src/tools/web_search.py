@@ -24,19 +24,24 @@ def create_web_search_agent(settings: Settings) -> Agent[None, str]:
     return Agent(
         settings.sub_agent_model_string,
         output_type=str,
+        output_retries=2,
         instructions=(
             "You are a web search assistant. Given a search query, "
             "use web search to find relevant, recent information and return "
             "a concise summary of the most important findings. "
-            "Focus on recent developments within the past week."
+            "Focus on recent developments within the past week. "
+            "IMPORTANT: After using the web search tool, you MUST provide "
+            "a text summary of the results. Do not make additional tool calls."
         ),
-        capabilities=[WebSearch()],
+        capabilities=[WebSearch(local=True)],
         defer_model_check=True,
     )
 
 
 async def web_search(
-    query: str, settings: Settings | None = None, usage: RunUsage | None = None
+    query: str,
+    settings: Settings | None = None,
+    usage: RunUsage | None = None,
 ) -> str:
     """Perform a web search and return summarized results.
 

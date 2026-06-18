@@ -1,24 +1,52 @@
 """Application configuration via pydantic-settings."""
 
+import os
 from functools import lru_cache
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+SUPPORTED_PROVIDERS = ("openai", "anthropic")
 
 
 class Settings(BaseSettings):
-    """All application settings, configurable via environment variables.
+    """All application settings, configurable via environment variables or .env file.
 
-    Environment variables use the AI_REPORT_ prefix.
-    For example: AI_REPORT_MODEL_PROVIDER=google-cloud
+    Environment variables use the AI_REPORT_ prefix for app-specific settings.
+    API credentials use their standard names (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.).
+
+    Supported providers: openai, anthropic
+
+    Settings are loaded from (in order of priority):
+    1. Explicit constructor arguments
+    2. Environment variables
+    3. .env file
+    4. Default values
     """
 
-    model_config = SettingsConfigDict(env_prefix="AI_REPORT_")
+    model_config = SettingsConfigDict(
+        env_prefix="AI_REPORT_",
+        env_file=".env",
+        populate_by_name=True,
+    )
+
+    # Provider selection
+    model_provider: str = "openai"
+
+    # OpenAI / OpenAI-compatible configuration
+    openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
+    openai_base_url: str = Field(
+        default="https://opencode.ai/zen/go/v1",
+        validation_alias="OPENAI_BASE_URL",
+    )
+
+    # Anthropic configuration
+    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
 
     # Model configuration
-    model_provider: str = "google-cloud"
-    report_manager_model: str = "gemini-2.5-flash-lite"
-    sub_agent_model: str = "gemini-2.5-flash-lite"
-    evaluator_model: str = "gemini-2.5-flash-lite"
+    report_manager_model: str = "deepseek-v4-flash"
+    sub_agent_model: str = "deepseek-v4-flash"
+    evaluator_model: str = "deepseek-v4-flash"
 
     # Output
     output_dir: str = "./output"
@@ -39,6 +67,7 @@ class Settings(BaseSettings):
         "https://ai.googleblog.com/feeds/posts/default",
         "https://simonwillison.net/atom/everything/",
         "https://chrisloy.dev/rss.xml",
+        "https://www.normaltech.ai/feed",
     ]
 
     # HackerNews search
@@ -56,6 +85,41 @@ class Settings(BaseSettings):
         "deep learning",
         "coding agent",
     ]
+
+    @model_validator(mode="after")
+    def validate_provider(self) -> "Settings":
+        """Validate that model_provider is supported."""
+        if self.model_provider not in SUPPORTED_PROVIDERS:
+            msg = (
+                f"Unsupported model_provider: {self.model_provider!r}. "
+                f"Choose from: {', '.join(SUPPORTED_PROVIDERS)}"
+            )
+            raise ValueError(msg)
+        return self
+
+    def configure(self) -> None:
+        """Set provider-specific env vars so pydantic_ai picks them up.
+
+        Call this at application startup before running any agents.
+        Raises ValueError if the required API key for the selected provider is missing.
+        """
+        if self.model_provider == "openai":
+            if not self.openai_api_key:
+                msg = (
+                    "OPENAI_API_KEY is not set. "
+                    "Please set it in .env or as an environment variable."
+                )
+                raise ValueError(msg)
+            os.environ["OPENAI_API_KEY"] = self.openai_api_key
+            os.environ["OPENAI_BASE_URL"] = self.openai_base_url
+        elif self.model_provider == "anthropic":
+            if not self.anthropic_api_key:
+                msg = (
+                    "ANTHROPIC_API_KEY is not set. "
+                    "Please set it in .env or as an environment variable."
+                )
+                raise ValueError(msg)
+            os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
 
     @property
     def manager_model_string(self) -> str:

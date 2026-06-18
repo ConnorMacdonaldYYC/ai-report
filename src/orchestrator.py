@@ -31,7 +31,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
     # Initial report generation
     prompt = f"Generate the AI Industry Weekly newsletter for {date_range}."
     result = await manager_agent.run(prompt)
-    report_output: ReportOutput = result.output
+    report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
     report_markdown = report_output.content
     sources = report_output.sources
     message_history = result.all_messages()
@@ -48,7 +48,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
         eval_prompt = f"Evaluate this newsletter report:\n\n{report_markdown}"
         eval_result = await evaluator_agent.run(eval_prompt)
 
-        eval_output = eval_result.output
+        eval_output: EvalResult = eval_result.output  # ty:ignore[invalid-assignment]
         eval_score = _compute_average_score(eval_output.dimensions)
         eval_passed = eval_output.overall_pass
 
@@ -78,7 +78,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
                 revision_prompt,
                 message_history=message_history,
             )
-            report_output = result.output
+            report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
             report_markdown = report_output.content
             sources = report_output.sources
             message_history = result.all_messages()

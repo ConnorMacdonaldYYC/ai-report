@@ -10,10 +10,12 @@ from src.schemas import DimensionScore, EvalResult, Source
 def sample_settings() -> Settings:
     """Return a Settings instance with test-friendly defaults."""
     return Settings(
-        model_provider="google-cloud",
-        report_manager_model="gemini-2.0-flash",
-        sub_agent_model="gemini-2.0-flash",
-        evaluator_model="gemini-2.0-flash",
+        model_provider="openai",
+        openai_api_key="test-key",
+        openai_base_url="https://test.example.com/v1",
+        report_manager_model="deepseek-v4-flash",
+        sub_agent_model="deepseek-v4-flash",
+        evaluator_model="deepseek-v4-flash",
         output_dir="./test_output",
         eval_threshold=0.7,
         max_revision_cycles=1,
@@ -66,8 +68,8 @@ def sample_sources() -> list[Source]:
     """Return a list of sample Source objects for testing."""
     return [
         Source(
-            url="https://blog.google/technology/ai/gemini-3/",
-            title="Google Announces Gemini 3.0",
+            url="https://openai.com/blog/gpt-5/",
+            title="OpenAI Announces GPT-5",
             source_type="web_search",
         ),
         Source(
