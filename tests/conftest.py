@@ -1,18 +1,43 @@
-"""Shared test fixtures for the AI newsletter agent system."""
+"""Shared test fixtures and hooks for the AI newsletter agent system."""
 
 import pytest
 
 from src.config import Settings
-from src.schemas import DimensionScore, EvalResult, Source
+from src.schemas import DimensionScore, EvalResult, SectionResult, Source
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add a --live-email flag to opt into tests that send real emails."""
+    parser.addoption(
+        "--live-email",
+        action="store_true",
+        default=False,
+        help="Run live_email-marked tests that send real emails via SMTP",
+    )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Skip live_email-marked tests unless --live-email was passed."""
+    if config.getoption("--live-email"):
+        return
+    skip_live = pytest.mark.skip(
+        reason="live email test — run with --live-email to enable"
+    )
+    for item in items:
+        if "live_email" in item.keywords:
+            item.add_marker(skip_live)
 
 
 @pytest.fixture
 def sample_settings() -> Settings:
     """Return a Settings instance with test-friendly defaults."""
-    return Settings(
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None,
         model_provider="openai",
         openai_api_key="test-key",
-        openai_base_url="https://test.example.com/v1",
+        base_url="https://test.example.com/v1",
         report_manager_model="deepseek-v4-flash",
         sub_agent_model="deepseek-v4-flash",
         evaluator_model="deepseek-v4-flash",
@@ -21,6 +46,7 @@ def sample_settings() -> Settings:
         max_revision_cycles=1,
         max_tool_calls=5,
         max_output_tokens=50000,
+        request_limit=50,
         log_environment="dev",
         rss_feeds=["https://example.com/feed.xml"],
         hn_min_score=50,
@@ -83,6 +109,26 @@ def sample_sources() -> list[Source]:
             source_type="hackernews",
         ),
     ]
+
+
+@pytest.fixture
+def sample_section_result() -> SectionResult:
+    """Return a sample SectionResult for testing sub-agent outputs."""
+    return SectionResult(
+        content="### Test content\n- Item one [1]\n- Item two [2]",
+        sources=[
+            Source(
+                url="https://example.com/source1",
+                title="Source One",
+                source_type="web_search",
+            ),
+            Source(
+                url="https://example.com/source2",
+                title="Source Two",
+                source_type="rss",
+            ),
+        ],
+    )
 
 
 @pytest.fixture

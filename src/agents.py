@@ -2,9 +2,11 @@
 
 Module-level Agent instances following the mining-report pattern:
 - Sub-agents are defined with defer_model_check=True
-- Manager agent calls sub-agents via tool wrappers
+- Manager agent is a synthesis-only agent (no tool wrappers)
 - Evaluator agent is standalone (not a tool on the manager)
 """
+
+import logging
 
 from pydantic_ai import Agent, RunContext
 
@@ -23,6 +25,8 @@ from src.tools.arxiv_search import arxiv_search
 from src.tools.hackernews import hackernews_search, hackernews_top_comments
 from src.tools.rss_reader import rss_reader
 from src.tools.web_search import web_search
+
+logger = logging.getLogger(__name__)
 
 # ── Shared settings ────────────────────────────────────────────────────────
 
@@ -181,7 +185,7 @@ async def search_web_coding(ctx: RunContext[None], query: str) -> str:
     return await web_search(query, usage=ctx.usage)
 
 
-# ── Manager Agent ─────────────────────────────────────────────────────────
+# ── Manager Agent (synthesis-only — no tool wrappers) ─────────────────────
 
 
 manager_agent = Agent(
@@ -193,62 +197,6 @@ manager_agent = Agent(
     output_retries=3,
     defer_model_check=True,
 )
-
-
-@manager_agent.tool
-async def industry_overview(ctx: RunContext[None], task: str) -> str:
-    """Get the industry overview section of the newsletter.
-
-    Covers big AI lab highlights, smaller lab highlights, and regulatory updates.
-
-    Args:
-        task: Specific focus or instructions for this section.
-    """
-    result = await industry_overview_agent.run(task, usage=ctx.usage)
-    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
-    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
-
-
-@manager_agent.tool
-async def research(ctx: RunContext[None], task: str) -> str:
-    """Get the research updates section of the newsletter.
-
-    Selects and summarizes 2 influential recent papers.
-
-    Args:
-        task: Specific focus or instructions for this section.
-    """
-    result = await research_agent.run(task, usage=ctx.usage)
-    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
-    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
-
-
-@manager_agent.tool
-async def community_news(ctx: RunContext[None], task: str) -> str:
-    """Get the community updates section of the newsletter.
-
-    Covers important discussions and other news from the AI community.
-
-    Args:
-        task: Specific focus or instructions for this section.
-    """
-    result = await community_news_agent.run(task, usage=ctx.usage)
-    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
-    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
-
-
-@manager_agent.tool
-async def coding_agents(ctx: RunContext[None], task: str) -> str:
-    """Get the coding agents section of the newsletter.
-
-    Covers best practices, tool updates, and community highlights.
-
-    Args:
-        task: Specific focus or instructions for this section.
-    """
-    result = await coding_agents_agent.run(task, usage=ctx.usage)
-    section: SectionResult = result.output  # ty:ignore[invalid-assignment]
-    return f"{section.content}\n\nSources:\n" + "\n".join(f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources))
 
 
 # ── Evaluator Agent (standalone, not a tool on the manager) ────────────────

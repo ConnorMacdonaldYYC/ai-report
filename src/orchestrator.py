@@ -2,13 +2,51 @@
 
 import logging
 
-from src.agents import evaluator_agent, manager_agent
+from pydantic_ai.exceptions import UsageLimitExceeded
+from pydantic_ai.usage import RunUsage, UsageLimits
+
+from src.agents import (
+    coding_agents_agent,
+    community_news_agent,
+    evaluator_agent,
+    industry_overview_agent,
+    manager_agent,
+    research_agent,
+)
 from src.config import Settings, get_settings
+from src.email_report import EmailResult, EmailStatus, send_report_email
 from src.output import write_report
 from src.prompts import get_date_range
-from src.schemas import DimensionScore, EvalResult, ReportOutput, ReportResult
+from src.schemas import (
+    DimensionScore,
+    EvalResult,
+    ReportOutput,
+    ReportResult,
+    SectionResult,
+    Source,
+)
 
 logger = logging.getLogger(__name__)
+
+# Section definitions: (agent, name, prompt_template)
+SECTIONS: list[tuple[str, str]] = [
+    (
+        "Industry Overview",
+        "Summarize the week's most significant AI industry developments.",
+    ),
+    (
+        "Research Updates",
+        "Select and summarize 2 influential recent AI/ML papers.",
+    ),
+    (
+        "Community Updates",
+        "Surface important discussions and news from the AI community.",
+    ),
+    (
+        "Coding Agents & Best Practices",
+        "Cover coding agent best practices, tool updates, and community highlights.",
+    ),
+]
 
 
 async def run_report(settings: Settings | None = None) -> ReportResult:
@@ -28,15 +66,47 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
 
     _setup_logfire(settings)
 
-    # Initial report generation
-    prompt = f"Generate the AI Industry Weekly newsletter for {date_range}."
-    result = await manager_agent.run(prompt)
+    # Shared usage tracking across all agent calls so the request_limit
+    # applies to the combined total of sub-agent + manager + evaluator calls.
+    shared_usage = RunUsage()
+    usage_limits = UsageLimits(request_limit=settings.request_limit)
+
+    # ── Gather sections from sub-agents ────────────────────────────────
+    sections = await _gather_sections(settings, date_range, shared_usage, usage_limits)
+
+    # ── Manager synthesizes the final report ────────────────────────────
+    synthesis_prompt = _build_synthesis_prompt(sections, date_range)
+
+    try:
+        result = await manager_agent.run(
+            synthesis_prompt,
+            usage=shared_usage,
+            usage_limits=usage_limits,
+        )
+    except UsageLimitExceeded as exc:
+        logger.warning("Manager synthesis hit usage limit, building fallback report: %s", exc)
+        report_markdown, sources = _build_fallback_report(sections, date_range)
+        output_path = write_report(report_markdown, date_range, settings, sources)
+        logger.warning("Fallback report written to %s", output_path)
+        _email_result = send_report_email(
+            report_markdown, date_range, 0.0, False, settings
+        )
+        _log_email_result(_email_result)
+        return ReportResult(
+            date_range=date_range,
+            report_markdown=report_markdown,
+            sources=sources,
+            eval_passed=False,
+            eval_score=0.0,
+            revision_count=0,
+        )
+
     report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
     report_markdown = report_output.content
     sources = report_output.sources
     message_history = result.all_messages()
 
-    # Evaluation and revision loop
+    # ── Evaluation and revision loop ────────────────────────────────────
     revision_count = 0
     eval_passed = False
     eval_score = 0.0
@@ -46,7 +116,15 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
 
         # Evaluate the report
         eval_prompt = f"Evaluate this newsletter report:\n\n{report_markdown}"
-        eval_result = await evaluator_agent.run(eval_prompt)
+        try:
+            eval_result = await evaluator_agent.run(
+                eval_prompt,
+                usage=shared_usage,
+                usage_limits=usage_limits,
+            )
+        except UsageLimitExceeded as exc:
+            logger.warning("Evaluation hit usage limit, skipping: %s", exc)
+            break
 
         eval_output: EvalResult = eval_result.output  # ty:ignore[invalid-assignment]
         eval_score = _compute_average_score(eval_output.dimensions)
@@ -74,11 +152,18 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
                 f"Please revise the report addressing these issues."
             )
 
-            result = await manager_agent.run(
-                revision_prompt,
-                message_history=message_history,
-            )
-            report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
+            try:
+                result = await manager_agent.run(
+                    revision_prompt,
+                    message_history=message_history,
+                    usage=shared_usage,
+                    usage_limits=usage_limits,
+                )
+            except UsageLimitExceeded as exc:
+                logger.warning("Revision hit usage limit, using current report: %s", exc)
+                break
+
+            report_output = result.output  # ty:ignore[invalid-assignment]
             report_markdown = report_output.content
             sources = report_output.sources
             message_history = result.all_messages()
@@ -94,6 +179,12 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
         eval_passed,
     )
 
+    # Best-effort email delivery (never affects report success)
+    _email_result = send_report_email(
+        report_markdown, date_range, eval_score, eval_passed, settings
+    )
+    _log_email_result(_email_result)
+
     return ReportResult(
         date_range=date_range,
         report_markdown=report_markdown,
@@ -102,6 +193,120 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
         eval_score=eval_score,
         revision_count=revision_count,
     )
+
+
+async def _gather_sections(
+    settings: Settings,
+    date_range: str,
+    usage: RunUsage,
+    usage_limits: UsageLimits,
+) -> list[SectionResult | None]:
+    """Call each sub-agent sequentially and collect results.
+
+    Each sub-agent call shares the same RunUsage so the request_limit applies
+    across all calls. If a sub-agent hits the usage limit, it is recorded as
+    None and the remaining sections are still attempted.
+
+    Args:
+        settings: Application settings.
+        date_range: The date range string for the report.
+        usage: Shared RunUsage object for tracking requests across all agents.
+        usage_limits: UsageLimits to enforce on each agent call.
+
+    Returns:
+        List of SectionResult or None (one per section, in order).
+    """
+    sub_agents = [
+        industry_overview_agent,
+        research_agent,
+        community_news_agent,
+        coding_agents_agent,
+    ]
+
+    sections: list[SectionResult | None] = []
+
+    for (section_name, task_desc), agent in zip(SECTIONS, sub_agents, strict=True):
+        prompt = (
+            f"Generate the {section_name} section for the AI Industry Weekly "
+            f"newsletter ({date_range}). {task_desc}"
+        )
+        try:
+            result = await agent.run(prompt, usage=usage, usage_limits=usage_limits)
+        except UsageLimitExceeded as exc:
+            logger.warning("%s section skipped due to usage limit: %s", section_name, exc)
+            sections.append(None)
+            continue
+
+        section: SectionResult = result.output  # ty:ignore[invalid-assignment]
+        sections.append(section)
+        logger.info("%s section gathered", section_name)
+
+    return sections
+
+
+def _build_synthesis_prompt(sections: list[SectionResult | None], date_range: str) -> str:
+    """Build a prompt for the manager to synthesize collected sections.
+
+    Args:
+        sections: List of SectionResult or None (one per section, in order).
+        date_range: The date range string for the report.
+
+    Returns:
+        Formatted prompt string containing all section content for the manager.
+    """
+    parts: list[str] = [
+        f"Assemble the following pre-collected section outputs into the final "
+        f"AI Industry Weekly newsletter for {date_range}."
+    ]
+
+    for (section_name, _), section in zip(SECTIONS, sections, strict=True):
+        if section is not None:
+            source_lines = "\n".join(
+                f"[{i + 1}] {s.title} — {s.url}" for i, s in enumerate(section.sources)
+            )
+            parts.append(
+                f"## {section_name}\n\n{section.content}\n\nSources:\n{source_lines}"
+            )
+        else:
+            parts.append(
+                f"## {section_name}\n\n"
+                f"Section skipped: usage limit reached. Note this briefly in the report."
+            )
+
+    return "\n\n---\n\n".join(parts)
+
+
+def _build_fallback_report(
+    sections: list[SectionResult | None], date_range: str
+) -> tuple[str, list[Source]]:
+    """Build a fallback report from collected sections when manager synthesis fails.
+
+    Concatenates the section content directly with per-section sources inline.
+    Citations are NOT globally renumbered (they remain per-section).
+
+    Args:
+        sections: List of SectionResult or None (one per section, in order).
+        date_range: The date range string for the report.
+
+    Returns:
+        Tuple of (report_markdown, sources) where sources is an empty list
+        since sources are included inline per section.
+    """
+    parts: list[str] = [f"# AI Industry Weekly - {date_range}"]
+
+    for (section_name, _), section in zip(SECTIONS, sections, strict=True):
+        if section is not None:
+            source_lines = "\n".join(
+                f"- [{s.title}]({s.url})" for s in section.sources
+            )
+            block = f"## {section_name}\n\n{section.content}"
+            if source_lines:
+                block += f"\n\n**Sources:**\n{source_lines}"
+            parts.append(block)
+        else:
+            parts.append(f"## {section_name}\n\n*Section skipped: usage limit reached.*")
+
+    return "\n\n---\n\n".join(parts), []
 
 
 def _compute_average_score(dimensions: list[DimensionScore]) -> float:
@@ -155,3 +360,18 @@ def _setup_logfire(settings: Settings) -> None:
         logger.info("Logfire instrumentation enabled")
     except Exception as e:
         logger.warning("Failed to set up Logfire: %s", e)
+
+
+def _log_email_result(result: EmailResult) -> None:
+    """Log the outcome of an email delivery attempt at the appropriate level.
+
+    Args:
+        result: EmailResult from send_report_email.
+    """
+    if result.status == EmailStatus.SENT:
+        logger.info("Email sent successfully")
+    elif result.status == EmailStatus.DRY_RUN:
+        logger.info("Dry-run HTML written to %s", result.html_path)
+    elif result.status == EmailStatus.FAILED:
+        logger.error("Email delivery failed: %s", result.error)
+    # DISABLED and SKIPPED are already logged inside send_report_email

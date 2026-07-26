@@ -12,9 +12,15 @@ class TestSettings:
 
     def test_default_values(self) -> None:
         """Should have sensible default values."""
-        settings = Settings()
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            report_manager_model="deepseek-v4-flash",
+            sub_agent_model="deepseek-v4-flash",
+            evaluator_model="deepseek-v4-flash",
+        )
         assert settings.model_provider == "openai"
-        assert settings.openai_base_url == "https://opencode.ai/zen/go/v1"
+        assert settings.base_url == "https://opencode.ai/zen/go"
         assert settings.report_manager_model == "deepseek-v4-flash"
         assert settings.sub_agent_model == "deepseek-v4-flash"
         assert settings.evaluator_model == "deepseek-v4-flash"
@@ -26,7 +32,8 @@ class TestSettings:
 
     def test_model_string_properties(self) -> None:
         """Should generate correct model strings."""
-        settings = Settings(
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
             model_provider="openai",
             report_manager_model="deepseek-v4-flash",
         )
@@ -36,7 +43,8 @@ class TestSettings:
 
     def test_anthropic_model_string(self) -> None:
         """Should generate correct model strings for Anthropic provider."""
-        settings = Settings(
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
             model_provider="anthropic",
             report_manager_model="claude-sonnet-4-6",
             sub_agent_model="claude-sonnet-4-6",
@@ -48,12 +56,12 @@ class TestSettings:
 
     def test_custom_rss_feeds(self) -> None:
         """Should accept custom RSS feeds."""
-        settings = Settings(rss_feeds=["https://example.com/feed.xml"])
+        settings = Settings(_env_file=None, rss_feeds=["https://example.com/feed.xml"])  # type: ignore[call-arg]
         assert settings.rss_feeds == ["https://example.com/feed.xml"]
 
     def test_custom_hn_settings(self) -> None:
         """Should accept custom HackerNews settings."""
-        settings = Settings(hn_min_score=100, hn_search_keywords=["AI", "LLM"])
+        settings = Settings(_env_file=None, hn_min_score=100, hn_search_keywords=["AI", "LLM"])  # type: ignore[call-arg]
         assert settings.hn_min_score == 100
         assert settings.hn_search_keywords == ["AI", "LLM"]
 
@@ -66,10 +74,11 @@ class TestSettings:
         original_api_key = os.environ.pop("OPENAI_API_KEY", None)
         original_base_url = os.environ.pop("OPENAI_BASE_URL", None)
         try:
-            settings = Settings(
+            settings = Settings(  # type: ignore[call-arg]
+                _env_file=None,
                 model_provider="openai",
                 openai_api_key="test-key-123",
-                openai_base_url="https://custom.example.com/v1",
+                base_url="https://custom.example.com/v1",
             )
             settings.configure()
             assert os.environ.get("OPENAI_API_KEY") == "test-key-123"
@@ -84,45 +93,53 @@ class TestSettings:
             else:
                 os.environ.pop("OPENAI_BASE_URL", None)
 
-    def test_configure_anthropic_sets_env_var(self) -> None:
-        """Should set ANTHROPIC_API_KEY when provider is anthropic."""
-        original = os.environ.pop("ANTHROPIC_API_KEY", None)
+    def test_configure_anthropic_sets_env_vars(self) -> None:
+        """Should set ANTHROPIC env vars when provider is anthropic."""
+        original_api_key = os.environ.pop("ANTHROPIC_API_KEY", None)
+        original_base_url = os.environ.pop("ANTHROPIC_BASE_URL", None)
         try:
-            settings = Settings(
+            settings = Settings(  # type: ignore[call-arg]
+                _env_file=None,
                 model_provider="anthropic",
                 anthropic_api_key="sk-ant-test-key",
+                base_url="https://custom.example.com/v1",
             )
             settings.configure()
             assert os.environ.get("ANTHROPIC_API_KEY") == "sk-ant-test-key"
+            assert os.environ.get("ANTHROPIC_BASE_URL") == "https://custom.example.com/v1"
         finally:
-            if original is not None:
-                os.environ["ANTHROPIC_API_KEY"] = original
+            if original_api_key is not None:
+                os.environ["ANTHROPIC_API_KEY"] = original_api_key
             else:
                 os.environ.pop("ANTHROPIC_API_KEY", None)
+            if original_base_url is not None:
+                os.environ["ANTHROPIC_BASE_URL"] = original_base_url
+            else:
+                os.environ.pop("ANTHROPIC_BASE_URL", None)
 
     def test_configure_raises_on_missing_openai_key(self) -> None:
         """Should raise ValueError if OPENAI_API_KEY is not set with openai provider."""
-        settings = Settings(model_provider="openai", openai_api_key="")
+        settings = Settings(_env_file=None, model_provider="openai", openai_api_key="")  # type: ignore[call-arg]
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             settings.configure()
 
     def test_configure_raises_on_missing_anthropic_key(self) -> None:
         """Should raise ValueError if ANTHROPIC_API_KEY is not set with anthropic provider."""
-        settings = Settings(model_provider="anthropic", anthropic_api_key="")
+        settings = Settings(_env_file=None, model_provider="anthropic", anthropic_api_key="")  # type: ignore[call-arg]
         with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
             settings.configure()
 
     def test_invalid_provider_raises(self) -> None:
         """Should raise ValueError for unsupported model_provider."""
         with pytest.raises(ValueError, match="Unsupported model_provider"):
-            Settings(model_provider="google")
+            Settings(_env_file=None, model_provider="google")  # type: ignore[call-arg]
 
     def test_openai_api_key_reads_from_env(self) -> None:
         """Should read OPENAI_API_KEY from environment variable."""
         original = os.environ.get("OPENAI_API_KEY")
         try:
             os.environ["OPENAI_API_KEY"] = "sk-test-env-key"
-            settings = Settings()
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
             assert settings.openai_api_key == "sk-test-env-key"
         finally:
             if original is not None:
@@ -135,13 +152,57 @@ class TestSettings:
         original = os.environ.get("ANTHROPIC_API_KEY")
         try:
             os.environ["ANTHROPIC_API_KEY"] = "sk-ant-env-key"
-            settings = Settings()
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
             assert settings.anthropic_api_key == "sk-ant-env-key"
         finally:
             if original is not None:
                 os.environ["ANTHROPIC_API_KEY"] = original
             else:
                 os.environ.pop("ANTHROPIC_API_KEY", None)
+
+    # ── Email settings ──────────────────────────────────────────────────
+
+    def test_email_defaults(self) -> None:
+        """Email settings should have sensible defaults (opt-in, not opt-out)."""
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert settings.email_enabled is False
+        assert settings.email_to == ""
+        assert settings.email_from == ""
+        assert settings.smtp_host == "smtp.gmail.com"
+        assert settings.smtp_port == 587
+        assert settings.smtp_username == ""
+        assert settings.smtp_password == ""
+        assert settings.smtp_use_tls is True
+        assert settings.email_subject_prefix == "AI Industry Weekly"
+        assert settings.email_dry_run is False
+
+    def test_custom_email_settings(self) -> None:
+        """Should accept custom email settings via constructor."""
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            openai_api_key="test-key",
+            email_enabled=True,
+            email_to="recipient@example.com",
+            email_from="sender@example.com",
+            smtp_host="smtp.custom.com",
+            smtp_port=465,
+            smtp_username="custom_user",
+            smtp_password="custom_pass",
+            smtp_use_tls=False,
+            email_subject_prefix="Custom Report",
+            email_dry_run=True,
+        )
+        assert settings.email_enabled is True
+        assert settings.email_to == "recipient@example.com"
+        assert settings.email_from == "sender@example.com"
+        assert settings.smtp_host == "smtp.custom.com"
+        assert settings.smtp_port == 465
+        assert settings.smtp_username == "custom_user"
+        assert settings.smtp_password == "custom_pass"
+        assert settings.smtp_use_tls is False
+        assert settings.email_subject_prefix == "Custom Report"
+        assert settings.email_dry_run is True
 
 
 class TestGetSettings:

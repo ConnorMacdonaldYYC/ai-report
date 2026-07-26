@@ -34,7 +34,7 @@ async def hackernews_search(
     start_date = date.today() - timedelta(days=days_back)
     start_timestamp = int(datetime(start_date.year, start_date.month, start_date.day).timestamp())
 
-    url = "https://hn.algolia.com/api/v1/search"
+    url = "https://hn.algolia.com/api/v1/search_by_date"
     params: dict[str, str | int] = {
         "query": query,
         "tags": "story",

@@ -71,14 +71,13 @@ class TestGetManagerInstructions:
             or str(date.today().year) in instructions
         )
 
-    def test_includes_sub_agent_calls(self) -> None:
-        """Should mention all sub-agent tools."""
+    def test_includes_section_assembly(self) -> None:
+        """Should mention assembling pre-collected section content."""
         settings = Settings()
         instructions = get_manager_instructions(settings)
-        assert "industry_overview" in instructions
-        assert "research" in instructions
-        assert "community_news" in instructions
-        assert "coding_agents" in instructions
+        assert "pre-collected content" in instructions
+        assert "assemble" in instructions.lower()
+        assert "citation" in instructions.lower()
 
 
 class TestGetEvaluatorSystemPrompt:

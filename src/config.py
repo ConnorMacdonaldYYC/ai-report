@@ -33,15 +33,15 @@ class Settings(BaseSettings):
     # Provider selection
     model_provider: str = "openai"
 
-    # OpenAI / OpenAI-compatible configuration
+    # API keys — read from standard env var names (no prefix)
     openai_api_key: str = Field(default="", validation_alias="OPENAI_API_KEY")
-    openai_base_url: str = Field(
-        default="https://opencode.ai/zen/go/v1",
+    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
+
+    # Base URL — shared across providers (opencode.ai proxy)
+    base_url: str = Field(
+        default="https://opencode.ai/zen/go",
         validation_alias="OPENAI_BASE_URL",
     )
-
-    # Anthropic configuration
-    anthropic_api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
 
     # Model configuration
     report_manager_model: str = "deepseek-v4-flash"
@@ -59,6 +59,20 @@ class Settings(BaseSettings):
     max_revision_cycles: int = 1
     max_tool_calls: int = 5
     max_output_tokens: int = 50000
+    request_limit: int = 300
+
+    # Email delivery (default-off; opt in via --send-email or AI_REPORT_EMAIL_ENABLED)
+    email_enabled: bool = False
+    email_to: str = ""
+    email_from: str = ""
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    email_subject_prefix: str = "AI Industry Weekly"
+    # Dry-run: render HTML to output dir instead of sending (no SMTP creds needed)
+    email_dry_run: bool = False
 
     # RSS feeds
     rss_feeds: list[str] = [
@@ -111,7 +125,7 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
             os.environ["OPENAI_API_KEY"] = self.openai_api_key
-            os.environ["OPENAI_BASE_URL"] = self.openai_base_url
+            os.environ["OPENAI_BASE_URL"] = self.base_url
         elif self.model_provider == "anthropic":
             if not self.anthropic_api_key:
                 msg = (
@@ -120,6 +134,7 @@ class Settings(BaseSettings):
                 )
                 raise ValueError(msg)
             os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
+            os.environ["ANTHROPIC_BASE_URL"] = self.base_url
 
     @property
     def manager_model_string(self) -> str:

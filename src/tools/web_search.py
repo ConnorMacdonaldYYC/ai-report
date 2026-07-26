@@ -1,9 +1,14 @@
 """Web search tool using Pydantic AI's built-in WebSearch capability."""
 
+import logging
+
 from pydantic_ai import Agent
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import RunUsage
 
 from src.config import Settings
+
+logger = logging.getLogger(__name__)
 
 # The web search is handled via the WebSearch capability on agents.
 # This module provides a helper to create a search agent that can be used
@@ -33,7 +38,7 @@ def create_web_search_agent(settings: Settings) -> Agent[None, str]:
             "IMPORTANT: After using the web search tool, you MUST provide "
             "a text summary of the results. Do not make additional tool calls."
         ),
-        capabilities=[WebSearch(local=True)],
+        capabilities=[WebSearch(native=False, local=True)],
         defer_model_check=True,
     )
 
@@ -46,6 +51,7 @@ async def web_search(
     """Perform a web search and return summarized results.
 
     This is a convenience function that creates a search agent and runs it.
+    If the usage limit is exceeded, returns a fallback message instead of raising.
 
     Args:
         query: The search query string.
@@ -53,7 +59,8 @@ async def web_search(
         usage: Optional RunUsage object to accumulate token usage across agents.
 
     Returns:
-        Summarized search results as a string.
+        Summarized search results as a string, or a fallback message if the
+        usage limit was exceeded.
     """
     if settings is None:
         from src.config import get_settings
@@ -61,5 +68,12 @@ async def web_search(
         settings = get_settings()
 
     agent = create_web_search_agent(settings)
-    result = await agent.run(query, usage=usage)
-    return str(result.output)
+    try:
+        result = await agent.run(query, usage=usage)
+        return str(result.output)
+    except UsageLimitExceeded as exc:
+        logger.warning("Web search skipped for '%s': %s", query, exc)
+        return (
+            "Web search was skipped because the request usage limit was reached. "
+            "Proceed using the information already gathered from other sources."
+        )

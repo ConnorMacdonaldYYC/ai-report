@@ -10,6 +10,8 @@ dependencies = [
     "logfire>=4.33.0",
     "feedparser>=6.0.12",
     "httpx>=0.28.1",
+    "pydantic-ai-slim[duckduckgo]>=1.97.0",
+    "markdown>=3.7",
 ]
 
 [project.optional-dependencies]
@@ -42,6 +44,10 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: marks tests that call external APIs (deselect with '-m \"not integration\"')",
+    "live_email: sends a real email via SMTP (deselect by default; run with --live-email)",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
