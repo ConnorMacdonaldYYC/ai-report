@@ -12,9 +12,16 @@ def get_date_range() -> str:
     return f"{start.strftime('%B %d, %Y')} - {today.strftime('%B %d, %Y')}"
 
 
+#
+STYLE_GUIDE = """
+STYLE GUIDE:
+    - Do not use em dashes
+    - Do not repeat yourself
+    - Text should be too the point and easy to read as an overview. If more details are needed the user can read the link.
+"""
 # ── Report Manager Agent ──────────────────────────────────────────────────
 
-MANAGER_SYSTEM_PROMPT = """\
+MANAGER_SYSTEM_PROMPT = f"""\
 You are the editor-in-chief of AIReport, a weekly AI industry newsletter.
 
 Your job is to assemble pre-collected section outputs from specialized \
@@ -50,6 +57,8 @@ keep citation markers like [1][2] at the end of the relevant text block.
 paper summary.
 - Collect ALL sources from all sub-agents into a single deduplicated list in \
 your sources field, renumbered to match the global citation markers in your content.
+
+ {STYLE_GUIDE}
 """
 
 MANAGER_INSTRUCTIONS = """\
@@ -68,7 +77,7 @@ matching the renumbered citation markers in your content.
 
 # ── Industry Overview Agent ───────────────────────────────────────────────
 
-INDUSTRY_OVERVIEW_SYSTEM_PROMPT = """\
+INDUSTRY_OVERVIEW_SYSTEM_PROMPT = f"""\
 You are an AI industry analyst specializing in tracking developments from \
 major AI labs and the regulatory landscape.
 
@@ -91,6 +100,8 @@ CITATION RULES — you must include source citations:
 first cited. [1] = sources[0], [2] = sources[1], etc.
 - Include URLs from web search results, HackerNews stories, and RSS articles.
 
+{STYLE_GUIDE}
+
 Output format (markdown):
 ### Big AI Labs
 - **Google**: [highlights] [1]
@@ -102,11 +113,12 @@ Output format (markdown):
 
 ### Regulatory Updates
 - [new laws, court cases, policy changes] [5]
+
 """
 
 # ── Research Agent ────────────────────────────────────────────────────────
 
-RESEARCH_SYSTEM_PROMPT = """\
+RESEARCH_SYSTEM_PROMPT = f"""\
 You are an AI research analyst who identifies and summarizes the most \
 influential recent papers in AI/ML.
 
@@ -137,8 +149,10 @@ the summary block, referencing the paper's source.
 first cited. [1] = sources[0], [2] = sources[1], etc.
 - Include the arXiv paper URL and any web search result URLs as sources.
 
+{STYLE_GUIDE}
+
 Output format (markdown):
-### {Paper Title}
+### {{Paper Title}}
 - **Authors**: ...
 - **Summary**: ... [1]
 - **Why it matters**: ...
@@ -146,7 +160,7 @@ Output format (markdown):
 
 # ── Community News Agent ──────────────────────────────────────────────────
 
-COMMUNITY_NEWS_SYSTEM_PROMPT = """\
+COMMUNITY_NEWS_SYSTEM_PROMPT = f"""\
 You are an AI community curator who tracks the most important discussions \
 and developments from the broader AI community.
 
@@ -167,6 +181,8 @@ CITATION RULES — you must include source citations:
 first cited. [1] = sources[0], [2] = sources[1], etc.
 - Include URLs from HackerNews stories, RSS articles, and web search results.
 
+{STYLE_GUIDE}
+
 Output format (markdown):
 ### Top Discussions
 - [important topics from HN, blogs, etc.] [1]
@@ -177,7 +193,7 @@ Output format (markdown):
 
 # ── Coding Agents Agent ──────────────────────────────────────────────────
 
-CODING_AGENTS_SYSTEM_PROMPT = """\
+CODING_AGENTS_SYSTEM_PROMPT = f"""\
 You are a specialist in AI coding agents — tools like Cursor, Copilot, \
 Claude Code, Aider, Continue, and similar products.
 
@@ -198,6 +214,8 @@ CITATION RULES — you must include source citations:
 - List every source you used in the sources field, in the order they are \
 first cited. [1] = sources[0], [2] = sources[1], etc.
 - Include URLs from RSS articles, web search results, and any other sources.
+
+ {STYLE_GUIDE}
 
 Output format (markdown):
 ### Best Practices
@@ -241,8 +259,8 @@ raw news aggregation?
 
 **Readability** (0.0-1.0): Is the report well-structured, concise, and \
 easy to read?
-- 0.0: Unreadable, poorly structured
-- 0.25: Hard to follow, verbose or disorganized
+- 0.0: Unreadable, poorly structured, long winded
+- 0.25: Hard to follow, verbose or disorganized, long winded
 - 0.50: Readable but could be tighter
 - 0.75: Well-structured and concise
 - 1.0: Excellent structure, concise, engaging
