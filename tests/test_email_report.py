@@ -107,13 +107,14 @@ class TestSendReportEmail:
     def test_missing_email_to_returns_none(
         self, sample_report_markdown: str, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Should return SKIPPED status when email_to is empty."""
+        """Should return SKIPPED status when email_to is an empty list."""
         settings = Settings(  # type: ignore[call-arg]
             _env_file=None,
             model_provider="openai",
             openai_api_key="test-key",
             email_enabled=True,
             email_from="sender@example.com",
+            email_to=[],
         )
         with caplog.at_level(logging.WARNING):
             result = send_report_email(
@@ -131,7 +132,7 @@ class TestSendReportEmail:
             model_provider="openai",
             openai_api_key="test-key",
             email_enabled=True,
-            email_to="recipient@example.com",
+            email_to=["recipient@example.com"],
         )
         with caplog.at_level(logging.WARNING):
             result = send_report_email(
@@ -151,7 +152,7 @@ class TestSendReportEmail:
             output_dir=str(tmp_path),
             email_enabled=True,
             email_dry_run=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
         )
         result = send_report_email(
@@ -173,7 +174,7 @@ class TestSendReportEmail:
             output_dir=str(tmp_path),
             email_enabled=True,
             email_dry_run=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
         )
         result = send_report_email(
@@ -195,7 +196,7 @@ class TestSendReportEmail:
             output_dir=str(tmp_path),
             email_enabled=True,
             email_dry_run=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
         )
         with patch("src.email_report.smtplib.SMTP") as mock_smtp:
@@ -215,7 +216,7 @@ class TestSendReportEmail:
             openai_api_key="test-key",
             output_dir=str(tmp_path),
             email_enabled=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
             smtp_host="smtp.example.com",
             smtp_port=587,
@@ -246,7 +247,7 @@ class TestSendReportEmail:
             openai_api_key="test-key",
             output_dir=str(tmp_path),
             email_enabled=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
             smtp_host="smtp.example.com",
             smtp_use_tls=True,
@@ -273,7 +274,7 @@ class TestSendReportEmail:
             openai_api_key="test-key",
             output_dir=str(tmp_path),
             email_enabled=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
             smtp_host="smtp.example.com",
             smtp_username="user",
@@ -302,9 +303,10 @@ class TestSendReportEmail:
             openai_api_key="test-key",
             output_dir=str(tmp_path),
             email_enabled=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
             smtp_host="smtp.example.com",
+            smtp_use_tls=True,
         )
         with (
             patch("src.email_report.smtplib.SMTP") as mock_smtp,
@@ -319,3 +321,94 @@ class TestSendReportEmail:
         assert result.status == EmailStatus.FAILED
         assert result.error is not None
         assert "Email send failed" in caplog.text
+
+    def test_send_to_multiple_recipients(
+        self, sample_report_markdown: str, tmp_path: str
+    ) -> None:
+        """Should send email to all recipients when email_to has multiple addresses."""
+        recipients = [
+            "alice@example.com",
+            "bob@example.com",
+            "carol@example.com",
+        ]
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            openai_api_key="test-key",
+            output_dir=str(tmp_path),
+            email_enabled=True,
+            email_to=recipients,
+            email_from="sender@example.com",
+            smtp_host="smtp.example.com",
+            smtp_port=587,
+            smtp_username="user",
+            smtp_password="pass",
+            smtp_use_tls=True,
+        )
+        with patch("src.email_report.smtplib.SMTP") as mock_smtp:
+            mock_server = MagicMock()
+            mock_smtp.return_value.__enter__.return_value = mock_server
+            result = send_report_email(
+                sample_report_markdown, "Test Range", 0.85, True, settings
+            )
+
+        assert result.status == EmailStatus.SENT
+        mock_server.send_message.assert_called_once()
+        # Extract the EmailMessage that was sent and verify the To header
+        sent_msg = mock_server.send_message.call_args.args[0]
+        assert sent_msg["To"] == ", ".join(recipients)
+
+    def test_send_to_two_recipients_logs_all(
+        self,
+        sample_report_markdown: str,
+        tmp_path: str,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Should log all recipients on success."""
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            openai_api_key="test-key",
+            output_dir=str(tmp_path),
+            email_enabled=True,
+            email_to=["alice@example.com", "bob@example.com"],
+            email_from="sender@example.com",
+            smtp_host="smtp.example.com",
+        )
+        with (
+            patch("src.email_report.smtplib.SMTP") as mock_smtp,
+            caplog.at_level(logging.INFO),
+        ):
+            mock_server = MagicMock()
+            mock_smtp.return_value.__enter__.return_value = mock_server
+            result = send_report_email(
+                sample_report_markdown, "Test Range", 0.85, True, settings
+            )
+
+        assert result.status == EmailStatus.SENT
+        assert "alice@example.com" in caplog.text
+        assert "bob@example.com" in caplog.text
+
+    def test_smtp_send_called_once_for_multiple_recipients(
+        self, sample_report_markdown: str, tmp_path: str
+    ) -> None:
+        """Should call server.send_message exactly once even with multiple recipients."""
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            openai_api_key="test-key",
+            output_dir=str(tmp_path),
+            email_enabled=True,
+            email_to=["a@example.com", "b@example.com", "c@example.com"],
+            email_from="sender@example.com",
+            smtp_host="smtp.example.com",
+        )
+        with patch("src.email_report.smtplib.SMTP") as mock_smtp:
+            mock_server = MagicMock()
+            mock_smtp.return_value.__enter__.return_value = mock_server
+            send_report_email(
+                sample_report_markdown, "Test Range", 0.85, True, settings
+            )
+
+        # One SMTP send_message call covering all recipients in the To header
+        mock_server.send_message.assert_called_once()

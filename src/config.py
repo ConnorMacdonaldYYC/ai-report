@@ -63,7 +63,9 @@ class Settings(BaseSettings):
 
     # Email delivery (default-off; opt in via --send-email or AI_REPORT_EMAIL_ENABLED)
     email_enabled: bool = False
-    email_to: str = ""
+    # List of recipients (RFC 5322 To header joined with ", "). For env vars,
+    # pydantic-settings parses JSON arrays, e.g. AI_REPORT_EMAIL_TO='["a@x","b@x"]'
+    email_to: list[str] = []
     email_from: str = ""
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
@@ -82,6 +84,7 @@ class Settings(BaseSettings):
         "https://simonwillison.net/atom/everything/",
         "https://chrisloy.dev/rss.xml",
         "https://www.normaltech.ai/feed",
+        "https://magazine.sebastianraschka.com/feed",
     ]
 
     # HackerNews search
@@ -104,10 +107,7 @@ class Settings(BaseSettings):
     def validate_provider(self) -> "Settings":
         """Validate that model_provider is supported."""
         if self.model_provider not in SUPPORTED_PROVIDERS:
-            msg = (
-                f"Unsupported model_provider: {self.model_provider!r}. "
-                f"Choose from: {', '.join(SUPPORTED_PROVIDERS)}"
-            )
+            msg = f"Unsupported model_provider: {self.model_provider!r}. Choose from: {', '.join(SUPPORTED_PROVIDERS)}"
             raise ValueError(msg)
         return self
 
@@ -119,19 +119,13 @@ class Settings(BaseSettings):
         """
         if self.model_provider == "openai":
             if not self.openai_api_key:
-                msg = (
-                    "OPENAI_API_KEY is not set. "
-                    "Please set it in .env or as an environment variable."
-                )
+                msg = "OPENAI_API_KEY is not set. Please set it in .env or as an environment variable."
                 raise ValueError(msg)
             os.environ["OPENAI_API_KEY"] = self.openai_api_key
             os.environ["OPENAI_BASE_URL"] = self.base_url
         elif self.model_provider == "anthropic":
             if not self.anthropic_api_key:
-                msg = (
-                    "ANTHROPIC_API_KEY is not set. "
-                    "Please set it in .env or as an environment variable."
-                )
+                msg = "ANTHROPIC_API_KEY is not set. Please set it in .env or as an environment variable."
                 raise ValueError(msg)
             os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
             os.environ["ANTHROPIC_BASE_URL"] = self.base_url

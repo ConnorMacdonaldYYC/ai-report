@@ -166,7 +166,7 @@ class TestSettings:
         """Email settings should have sensible defaults (opt-in, not opt-out)."""
         settings = Settings(_env_file=None)  # type: ignore[call-arg]
         assert settings.email_enabled is False
-        assert settings.email_to == ""
+        assert settings.email_to == []
         assert settings.email_from == ""
         assert settings.smtp_host == "smtp.gmail.com"
         assert settings.smtp_port == 587
@@ -183,7 +183,7 @@ class TestSettings:
             model_provider="openai",
             openai_api_key="test-key",
             email_enabled=True,
-            email_to="recipient@example.com",
+            email_to=["recipient@example.com"],
             email_from="sender@example.com",
             smtp_host="smtp.custom.com",
             smtp_port=465,
@@ -194,7 +194,7 @@ class TestSettings:
             email_dry_run=True,
         )
         assert settings.email_enabled is True
-        assert settings.email_to == "recipient@example.com"
+        assert settings.email_to == ["recipient@example.com"]
         assert settings.email_from == "sender@example.com"
         assert settings.smtp_host == "smtp.custom.com"
         assert settings.smtp_port == 465

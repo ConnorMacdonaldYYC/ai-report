@@ -98,7 +98,7 @@ def send_report_email(
         logger.error("Email send failed: %s", exc)
         return EmailResult(status=EmailStatus.FAILED, error=str(exc))
 
-    logger.info("Report emailed to %s", settings.email_to)
+    logger.info("Report emailed to %s", ", ".join(settings.email_to))
     return EmailResult(status=EmailStatus.SENT)
 
 
@@ -146,7 +146,7 @@ def _send_smtp(
     msg = EmailMessage()
     msg["Subject"] = subject
     msg["From"] = settings.email_from
-    msg["To"] = settings.email_to
+    msg["To"] = ", ".join(settings.email_to)
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 

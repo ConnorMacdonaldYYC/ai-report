@@ -751,7 +751,7 @@ class TestRunReport:
             max_revision_cycles=0,
             email_enabled=True,
             email_dry_run=True,
-            email_to="test@example.com",
+            email_to=["test@example.com"],
             email_from="sender@example.com",
         )
 
