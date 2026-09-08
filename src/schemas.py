@@ -7,7 +7,7 @@ field descriptions for Pydantic AI structured output.
 
 from typing import Literal, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 
 # ── Report request (TypedDict — simple data bag) ──────────────────────────
 
@@ -16,6 +16,22 @@ class ReportRequest(TypedDict):
     """Input to the report pipeline."""
 
     date_range: str  # e.g. "May 11 - May 18, 2026"
+
+
+# ── Token usage (BaseModel — shared by pipeline and eval framework) ────────
+
+
+class TokenUsage(BaseModel):
+    """Token counts for one or more agent runs."""
+
+    input_tokens: int = 0
+    output_tokens: int = 0
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens (input + output)."""
+        return self.input_tokens + self.output_tokens
 
 
 # ── Source tracking (BaseModel — used in agent structured output) ──────────
@@ -78,6 +94,7 @@ class ReportResult(BaseModel):
     eval_passed: bool
     eval_score: float
     revision_count: int
+    tokens: TokenUsage = Field(default_factory=TokenUsage)
 
 
 # ── Evaluation schemas (BaseModel, following mining-report pattern) ──

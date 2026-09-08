@@ -5,14 +5,7 @@ import logging
 from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.usage import RunUsage, UsageLimits
 
-from src.agents import (
-    coding_agents_agent,
-    community_news_agent,
-    evaluator_agent,
-    industry_overview_agent,
-    manager_agent,
-    research_agent,
-)
+from src.agents import AgentBundle, default_bundle
 from src.config import Settings, get_settings
 from src.email_report import EmailResult, EmailStatus, send_report_email
 from src.output import write_report
@@ -24,6 +17,7 @@ from src.schemas import (
     ReportResult,
     SectionResult,
     Source,
+    TokenUsage,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,19 +43,32 @@ SECTIONS: list[tuple[str, str]] = [
 ]
 
 
-async def run_report(settings: Settings | None = None) -> ReportResult:
+async def run_report(
+    settings: Settings | None = None,
+    *,
+    bundle: AgentBundle | None = None,
+    date_range: str | None = None,
+) -> ReportResult:
     """Run the full newsletter report pipeline with evaluation and revision loop.
 
     Args:
         settings: Application settings. Uses defaults if not provided.
+        bundle: Agent bundle to run with. If not provided, the module-level
+            default bundle (built from get_settings()) is used. Pass an
+            explicit bundle to run with a different model configuration.
+        date_range: Fixed date range for the report. When None, the last
+            7 days are computed at run time.
 
     Returns:
         ReportResult with the final report, evaluation scores, and metadata.
     """
     if settings is None:
         settings = get_settings()
+    if bundle is None:
+        bundle = default_bundle
+    if date_range is None:
+        date_range = get_date_range()
 
-    date_range = get_date_range()
     logger.info("Starting report generation for %s", date_range)
 
     _setup_logfire(settings)
@@ -72,13 +79,13 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
     usage_limits = UsageLimits(request_limit=settings.request_limit)
 
     # ── Gather sections from sub-agents ────────────────────────────────
-    sections = await _gather_sections(settings, date_range, shared_usage, usage_limits)
+    sections = await _gather_sections(bundle, date_range, shared_usage, usage_limits)
 
     # ── Manager synthesizes the final report ────────────────────────────
     synthesis_prompt = _build_synthesis_prompt(sections, date_range)
 
     try:
-        result = await manager_agent.run(
+        result = await bundle.manager.run(
             synthesis_prompt,
             usage=shared_usage,
             usage_limits=usage_limits,
@@ -99,6 +106,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
             eval_passed=False,
             eval_score=0.0,
             revision_count=0,
+            tokens=_usage_tokens(shared_usage),
         )
 
     report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
@@ -117,7 +125,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
         # Evaluate the report
         eval_prompt = f"Evaluate this newsletter report:\n\n{report_markdown}"
         try:
-            eval_result = await evaluator_agent.run(
+            eval_result = await bundle.evaluator.run(
                 eval_prompt,
                 usage=shared_usage,
                 usage_limits=usage_limits,
@@ -153,7 +161,7 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
             )
 
             try:
-                result = await manager_agent.run(
+                result = await bundle.manager.run(
                     revision_prompt,
                     message_history=message_history,
                     usage=shared_usage,
@@ -192,11 +200,27 @@ async def run_report(settings: Settings | None = None) -> ReportResult:
         eval_passed=eval_passed,
         eval_score=eval_score,
         revision_count=revision_count,
+        tokens=_usage_tokens(shared_usage),
+    )
+
+
+def _usage_tokens(usage: RunUsage) -> TokenUsage:
+    """Convert a RunUsage accumulator into a TokenUsage schema.
+
+    Args:
+        usage: RunUsage with accumulated counts across all agent calls.
+
+    Returns:
+        TokenUsage with None counts treated as zero.
+    """
+    return TokenUsage(
+        input_tokens=usage.input_tokens or 0,
+        output_tokens=usage.output_tokens or 0,
     )
 
 
 async def _gather_sections(
-    settings: Settings,
+    bundle: AgentBundle,
     date_range: str,
     usage: RunUsage,
     usage_limits: UsageLimits,
@@ -208,7 +232,7 @@ async def _gather_sections(
     None and the remaining sections are still attempted.
 
     Args:
-        settings: Application settings.
+        bundle: Agent bundle providing the sub-agents to run.
         date_range: The date range string for the report.
         usage: Shared RunUsage object for tracking requests across all agents.
         usage_limits: UsageLimits to enforce on each agent call.
@@ -217,10 +241,10 @@ async def _gather_sections(
         List of SectionResult or None (one per section, in order).
     """
     sub_agents = [
-        industry_overview_agent,
-        research_agent,
-        community_news_agent,
-        coding_agents_agent,
+        bundle.industry_overview,
+        bundle.research,
+        bundle.community_news,
+        bundle.coding_agents,
     ]
 
     sections: list[SectionResult | None] = []
