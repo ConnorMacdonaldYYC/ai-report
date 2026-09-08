@@ -17,7 +17,8 @@ STYLE_GUIDE = """
 STYLE GUIDE:
     - Do not use em dashes
     - Do not repeat yourself
-    - Text should be too the point and easy to read as an overview. If more details are needed the user can read the link.
+    - Text should be too the point and easy to read as an overview. \
+If more details are needed the user can read the link.
 """
 # ── Report Manager Agent ──────────────────────────────────────────────────
 

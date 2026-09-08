@@ -107,7 +107,8 @@ class Settings(BaseSettings):
     def validate_provider(self) -> "Settings":
         """Validate that model_provider is supported."""
         if self.model_provider not in SUPPORTED_PROVIDERS:
-            msg = f"Unsupported model_provider: {self.model_provider!r}. Choose from: {', '.join(SUPPORTED_PROVIDERS)}"
+            supported = ", ".join(SUPPORTED_PROVIDERS)
+            msg = f"Unsupported model_provider: {self.model_provider!r}. Choose from: {supported}"
             raise ValueError(msg)
         return self
 
@@ -119,13 +120,19 @@ class Settings(BaseSettings):
         """
         if self.model_provider == "openai":
             if not self.openai_api_key:
-                msg = "OPENAI_API_KEY is not set. Please set it in .env or as an environment variable."
+                msg = (
+                    "OPENAI_API_KEY is not set. "
+                    "Please set it in .env or as an environment variable."
+                )
                 raise ValueError(msg)
             os.environ["OPENAI_API_KEY"] = self.openai_api_key
             os.environ["OPENAI_BASE_URL"] = self.base_url
         elif self.model_provider == "anthropic":
             if not self.anthropic_api_key:
-                msg = "ANTHROPIC_API_KEY is not set. Please set it in .env or as an environment variable."
+                msg = (
+                    "ANTHROPIC_API_KEY is not set. "
+                    "Please set it in .env or as an environment variable."
+                )
                 raise ValueError(msg)
             os.environ["ANTHROPIC_API_KEY"] = self.anthropic_api_key
             os.environ["ANTHROPIC_BASE_URL"] = self.base_url
