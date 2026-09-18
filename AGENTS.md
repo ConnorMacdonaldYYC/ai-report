@@ -2,11 +2,23 @@
 ## Running
 Run the project with `make run`
 
+## Deployment (connorspi)
+The report runs weekly on the Raspberry Pi via systemd — unit files are versioned in `scripts/`:
+
+- `ai-report.timer` (Mon 06:00, Persistent) → triggers `ai-report-run.service`
+- `ai-report-update.service` pulls `main` from GitHub and runs `uv sync` as `connormacdonald`
+- `ai-report-run.service` executes the report as the dedicated `aireport` service user
+
+**Code flows via GitHub only**: push to `main`, and the Pi pulls before each run. Never bundle or scp code.
+**Secrets flow via `make deploy`**: it syncs `.env` to the Pi and fixes ownership to `root:aireport 640` (the `aireport` user can read it; `connormacdonald`/opencode cannot — by design). The Pi's `.env` is not directly writable by `connormacdonald`, so deploy scps via `/tmp` + `sudo mv`.
+The Pi's Python 3.12 lives in `/opt/uv-python` (shared, so the service user can execute the venv) — the update unit sets `UV_PYTHON_INSTALL_DIR` accordingly.
+
 ## Observability Strategy
 
 | Environment | Backend | Implementation |
 |-------------|---------|----------------|
-| Local dev | Logfire | `logfire.instrument_pydantic_ai()` — requires logfire auth |
+| Local dev | Logfire | `logfire.instrument_pydantic_ai()` — uses cached `logfire auth` credentials |
+| Pi (weekly cron) | Logfire | Same instrumentation, headless auth via `LOGFIRE_TOKEN` (write token) in `.env` — blank token falls back to dev credentials |
 
 ## Code Style Guidelines
 Always make sure the .venv is active before running commands
@@ -21,7 +33,7 @@ Use the Makefile for all linting and testing — do not run `ruff`, `mypy`, or `
 Always run `make lint` after making changes.
 
 ### Python Version & Syntax
-- Target Python 3.11+ (`.python-version` and `pyproject.toml`)
+- Target Python 3.12+ (`requires-python` in `pyproject.toml` and `.python-version`)
 - Use modern union syntax: `str | None` not `Optional[str]`, `list[str]` not `List[str]`
 
 ### Type Annotations
