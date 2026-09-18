@@ -1,0 +1,17 @@
+[Unit]
+Description=ai-report — generate and email the weekly AI report
+Requires=ai-report-update.service
+After=ai-report-update.service
+
+[Service]
+Type=oneshot
+User=aireport
+WorkingDirectory=/home/connormacdonald/ai-report
+ExecStart=/home/connormacdonald/ai-report/.venv/bin/ai-report --send-email
+TimeoutStartSec=45min
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/connormacdonald/ai-report/output
+PrivateTmp=true
+# Optional seatbelt for the 906 MB host — uncomment if RAM pressure appears:
+# MemoryMax=350M

@@ -21,20 +21,13 @@ run:
 eval:
 	uv run python -m src.eval --generators $(GENERATORS) --evaluators $(EVALUATORS) --seeds $(SEEDS)
 
-# Deploy code + .env to the Raspberry Pi.
-# Bundles the repo into a single file, scps it to /tmp on the Pi, and
-# copies .env to ~/ai-report. The cron job on the Pi fetches the bundle
-# each run, so re-running `make deploy` before Monday publishes updates.
+# Sync .env to the Raspberry Pi and fix ownership for the aireport service user.
+# Code updates flow the other way: push to GitHub, the Pi pulls weekly
+# (ai-report-update.service).
 PI ?= connorspi
 PI_PATH ?= ~/ai-report
-BUNDLE := /tmp/ai-report.bundle
 
 deploy:
-	git bundle create $(BUNDLE) --all
-	ssh $(PI) "mkdir -p $(PI_PATH)"
-	scp $(BUNDLE) $(PI):$(BUNDLE)
 	scp .env $(PI):$(PI_PATH)/.env
-	rm $(BUNDLE)
-	@echo ""
-	@echo "Deployed. On the Pi:"
-	@echo "  cd $(PI_PATH) && git clone /tmp/ai-report.bundle . && uv sync"
+	ssh $(PI) "sudo chown root:aireport $(PI_PATH)/.env && sudo chmod 640 $(PI_PATH)/.env"
+	@echo "Synced .env to $(PI):$(PI_PATH)/.env (root:aireport 640)"
