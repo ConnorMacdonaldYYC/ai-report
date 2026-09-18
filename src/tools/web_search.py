@@ -24,10 +24,14 @@ def create_web_search_agent(settings: Settings) -> Agent[None, str]:
     Returns:
         An agent configured with web search capability.
     """
+    # Deferred import — src.agents imports src.tools, so pulling _build_model
+    # at the top of this module would form a circular import.
     from pydantic_ai.capabilities import WebSearch
 
+    from src.agents import _build_model
+
     return Agent(
-        settings.sub_agent_model_string,
+        _build_model(settings.sub_agent_model, settings),
         output_type=str,
         output_retries=2,
         instructions=(

@@ -13,7 +13,14 @@ backward compatibility with existing imports and the standard CLI path:
 import logging
 from dataclasses import dataclass
 
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
+from pydantic_ai.models import Model
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.anthropic import AnthropicProvider
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from src.config import Settings, get_settings
 from src.prompts import (
@@ -53,6 +60,41 @@ class AgentBundle:
     evaluator: Agent[None, EvalResult]
 
 
+def _build_model(model_name: str, settings: Settings) -> Model:
+    """Build a pydantic-ai Model with the opencode-go session header wired in.
+
+    The header is applied through the underlying SDK client's ``default_headers``,
+    so it rides on every chat-completions / messages request sent through pydantic-ai.
+
+    Args:
+        model_name: Bare model name (e.g. ``"deepseek-v4-flash"``, ``"claude-sonnet-4-6"``).
+        settings: Application settings providing provider, base_url, api_key.
+
+    Returns:
+        An OpenAIChatModel or AnthropicModel configured for the chosen provider.
+    """
+    headers = {"x-opencode-session": settings.opencode_session_id}
+    if settings.model_provider == "openai":
+        openai_client = AsyncOpenAI(
+            base_url=settings.base_url,
+            api_key=settings.openai_api_key,
+            default_headers=headers,
+        )
+        return OpenAIChatModel(model_name, provider=OpenAIProvider(openai_client=openai_client))
+    if settings.model_provider == "anthropic":
+        anthropic_client = AsyncAnthropic(
+            api_key=settings.anthropic_api_key,
+            base_url=settings.base_url,
+            default_headers=headers,
+        )
+        return AnthropicModel(
+            model_name,
+            provider=AnthropicProvider(anthropic_client=anthropic_client),
+        )
+    msg = f"Unsupported model_provider: {settings.model_provider!r}"
+    raise ValueError(msg)
+
+
 def build_agents(settings: Settings) -> AgentBundle:
     """Build a fresh set of agents from the given settings.
 
@@ -65,7 +107,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Industry Overview Agent ─────────────────────────────────────────
     industry_overview = Agent(
-        settings.sub_agent_model_string,
+        _build_model(settings.sub_agent_model, settings),
         output_type=SectionResult,
         system_prompt=INDUSTRY_OVERVIEW_SYSTEM_PROMPT,
         output_retries=3,
@@ -106,7 +148,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Research Agent ──────────────────────────────────────────────────
     research = Agent(
-        settings.sub_agent_model_string,
+        _build_model(settings.sub_agent_model, settings),
         output_type=SectionResult,
         system_prompt=RESEARCH_SYSTEM_PROMPT,
         output_retries=3,
@@ -134,7 +176,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Community News Agent ────────────────────────────────────────────
     community_news = Agent(
-        settings.sub_agent_model_string,
+        _build_model(settings.sub_agent_model, settings),
         output_type=SectionResult,
         system_prompt=COMMUNITY_NEWS_SYSTEM_PROMPT,
         output_retries=3,
@@ -175,7 +217,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Coding Agents Agent ─────────────────────────────────────────────
     coding_agents = Agent(
-        settings.sub_agent_model_string,
+        _build_model(settings.sub_agent_model, settings),
         output_type=SectionResult,
         system_prompt=CODING_AGENTS_SYSTEM_PROMPT,
         output_retries=3,
@@ -198,7 +240,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Manager Agent (synthesis-only — no tool wrappers) ───────────────
     manager = Agent(
-        settings.manager_model_string,
+        _build_model(settings.report_manager_model, settings),
         output_type=ReportOutput,
         system_prompt=MANAGER_SYSTEM_PROMPT,
         instructions=get_manager_instructions(settings),
@@ -209,7 +251,7 @@ def build_agents(settings: Settings) -> AgentBundle:
 
     # ── Evaluator Agent (standalone, not a tool on the manager) ─────────
     evaluator = Agent(
-        settings.evaluator_model_string,
+        _build_model(settings.evaluator_model, settings),
         output_type=EvalResult,
         system_prompt=get_evaluator_system_prompt(settings),
         output_retries=3,

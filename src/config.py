@@ -1,6 +1,7 @@
 """Application configuration via pydantic-settings."""
 
 import os
+import uuid
 from functools import lru_cache
 
 from pydantic import Field, model_validator
@@ -61,6 +62,10 @@ class Settings(BaseSettings):
     max_output_tokens: int = 50000
     request_limit: int = 300
 
+    # opencode-go proxy — stable per-session identifier required by the host.
+    # Auto-generated when blank so "one stable ID per conversation" holds by default.
+    opencode_session_id: str = ""
+
     # Email delivery (default-off; opt in via --send-email or AI_REPORT_EMAIL_ENABLED)
     email_enabled: bool = False
     # List of recipients (RFC 5322 To header joined with ", "). For env vars,
@@ -105,11 +110,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_provider(self) -> "Settings":
-        """Validate that model_provider is supported."""
+        """Validate that model_provider is supported and finalize session ID."""
         if self.model_provider not in SUPPORTED_PROVIDERS:
             supported = ", ".join(SUPPORTED_PROVIDERS)
             msg = f"Unsupported model_provider: {self.model_provider!r}. Choose from: {supported}"
             raise ValueError(msg)
+        # Stable per-process session ID for opencode-go. Cached on the instance so
+        # all agents built from the same Settings share the same ID.
+        if not self.opencode_session_id:
+            object.__setattr__(self, "opencode_session_id", uuid.uuid4().hex)
         return self
 
     def configure(self) -> None:

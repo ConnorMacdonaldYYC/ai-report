@@ -134,6 +134,25 @@ class TestSettings:
         with pytest.raises(ValueError, match="Unsupported model_provider"):
             Settings(_env_file=None, model_provider="google")  # type: ignore[call-arg]
 
+    # ── opencode-go session ID ──────────────────────────────────────────
+
+    def test_session_id_auto_generated_when_blank(self) -> None:
+        """An empty opencode_session_id should be filled in with a UUID hex."""
+        settings = Settings(_env_file=None, model_provider="openai")  # type: ignore[call-arg]
+        assert settings.opencode_session_id
+        # 32-char hex from uuid4().hex — stable within this instance.
+        assert len(settings.opencode_session_id) == 32
+        int(settings.opencode_session_id, 16)  # parses as hex
+
+    def test_session_id_respects_explicit_value(self) -> None:
+        """An explicit opencode_session_id should not be overwritten."""
+        settings = Settings(  # type: ignore[call-arg]
+            _env_file=None,
+            model_provider="openai",
+            opencode_session_id="pinned-session-id",
+        )
+        assert settings.opencode_session_id == "pinned-session-id"
+
     def test_openai_api_key_reads_from_env(self) -> None:
         """Should read OPENAI_API_KEY from environment variable."""
         original = os.environ.get("OPENAI_API_KEY")
