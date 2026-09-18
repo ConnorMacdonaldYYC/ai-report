@@ -92,22 +92,10 @@ async def run_report(
         )
     except UsageLimitExceeded as exc:
         logger.warning("Manager synthesis hit usage limit, building fallback report: %s", exc)
-        report_markdown, sources = _build_fallback_report(sections, date_range)
-        output_path = write_report(report_markdown, date_range, settings, sources)
-        logger.warning("Fallback report written to %s", output_path)
-        _email_result = send_report_email(
-            report_markdown, date_range, 0.0, False, settings
-        )
-        _log_email_result(_email_result)
-        return ReportResult(
-            date_range=date_range,
-            report_markdown=report_markdown,
-            sources=sources,
-            eval_passed=False,
-            eval_score=0.0,
-            revision_count=0,
-            tokens=_usage_tokens(shared_usage),
-        )
+        return _fallback_report_result(sections, date_range, settings, shared_usage)
+    except Exception as exc:
+        logger.error("Manager synthesis failed, building fallback report: %s", exc)
+        return _fallback_report_result(sections, date_range, settings, shared_usage)
 
     report_output: ReportOutput = result.output  # ty:ignore[invalid-assignment]
     report_markdown = report_output.content
@@ -132,6 +120,9 @@ async def run_report(
             )
         except UsageLimitExceeded as exc:
             logger.warning("Evaluation hit usage limit, skipping: %s", exc)
+            break
+        except Exception as exc:
+            logger.error("Evaluation failed, using current report: %s", exc)
             break
 
         eval_output: EvalResult = eval_result.output  # ty:ignore[invalid-assignment]
@@ -169,6 +160,9 @@ async def run_report(
                 )
             except UsageLimitExceeded as exc:
                 logger.warning("Revision hit usage limit, using current report: %s", exc)
+                break
+            except Exception as exc:
+                logger.error("Revision failed, using current report: %s", exc)
                 break
 
             report_output = result.output  # ty:ignore[invalid-assignment]
@@ -228,8 +222,9 @@ async def _gather_sections(
     """Call each sub-agent sequentially and collect results.
 
     Each sub-agent call shares the same RunUsage so the request_limit applies
-    across all calls. If a sub-agent hits the usage limit, it is recorded as
-    None and the remaining sections are still attempted.
+    across all calls. If a sub-agent fails for any reason (usage limit,
+    search-backend error, transient API failure), it is recorded as None and
+    the remaining sections are still attempted.
 
     Args:
         bundle: Agent bundle providing the sub-agents to run.
@@ -258,6 +253,10 @@ async def _gather_sections(
             result = await agent.run(prompt, usage=usage, usage_limits=usage_limits)
         except UsageLimitExceeded as exc:
             logger.warning("%s section skipped due to usage limit: %s", section_name, exc)
+            sections.append(None)
+            continue
+        except Exception as exc:
+            logger.error("%s section failed, skipping: %s", section_name, exc)
             sections.append(None)
             continue
 
@@ -331,6 +330,43 @@ def _build_fallback_report(
             parts.append(f"## {section_name}\n\n*Section skipped: usage limit reached.*")
 
     return "\n\n---\n\n".join(parts), []
+
+
+def _fallback_report_result(
+    sections: list[SectionResult | None],
+    date_range: str,
+    settings: Settings,
+    shared_usage: RunUsage,
+) -> ReportResult:
+    """Build a fallback report from collected sections and deliver it.
+
+    Used when manager synthesis fails (usage limit or unexpected error).
+    Writes the report to disk and attempts email delivery; evaluation is
+    marked as failed since no evaluation was performed.
+
+    Args:
+        sections: List of SectionResult or None (one per section, in order).
+        date_range: The date range string for the report.
+        settings: Application settings (for output dir and email config).
+        shared_usage: Shared RunUsage accumulated across all agent calls.
+
+    Returns:
+        ReportResult describing the fallback report.
+    """
+    report_markdown, sources = _build_fallback_report(sections, date_range)
+    output_path = write_report(report_markdown, date_range, settings, sources)
+    logger.warning("Fallback report written to %s", output_path)
+    _email_result = send_report_email(report_markdown, date_range, 0.0, False, settings)
+    _log_email_result(_email_result)
+    return ReportResult(
+        date_range=date_range,
+        report_markdown=report_markdown,
+        sources=sources,
+        eval_passed=False,
+        eval_score=0.0,
+        revision_count=0,
+        tokens=_usage_tokens(shared_usage),
+    )
 
 
 def _compute_average_score(dimensions: list[DimensionScore]) -> float:

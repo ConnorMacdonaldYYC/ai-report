@@ -55,7 +55,9 @@ async def web_search(
     """Perform a web search and return summarized results.
 
     This is a convenience function that creates a search agent and runs it.
-    If the usage limit is exceeded, returns a fallback message instead of raising.
+    Never raises: if the search backend fails (e.g. the DuckDuckGo client
+    returns no results or the usage limit is exceeded), returns a fallback
+    message so the calling agent can proceed with its other sources.
 
     Args:
         query: The search query string.
@@ -64,7 +66,7 @@ async def web_search(
 
     Returns:
         Summarized search results as a string, or a fallback message if the
-        usage limit was exceeded.
+        search failed or the usage limit was exceeded.
     """
     if settings is None:
         from src.config import get_settings
@@ -80,4 +82,10 @@ async def web_search(
         return (
             "Web search was skipped because the request usage limit was reached. "
             "Proceed using the information already gathered from other sources."
+        )
+    except Exception as exc:
+        logger.warning("Web search failed for '%s': %s", query, exc)
+        return (
+            "Web search is currently unavailable (the search backend returned an "
+            "error). Proceed using the information already gathered from other sources."
         )
