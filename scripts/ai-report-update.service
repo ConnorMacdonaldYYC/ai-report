@@ -7,4 +7,4 @@ After=network-online.target
 Type=oneshot
 User=connormacdonald
 WorkingDirectory=/home/connormacdonald/ai-report
-ExecStart=/bin/bash -c 'git pull --ff-only origin main && uv sync --frozen'
+ExecStart=/bin/bash -c 'git pull --ff-only origin main && /home/connormacdonald/.local/bin/uv sync --frozen'
