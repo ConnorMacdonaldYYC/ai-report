@@ -2,6 +2,7 @@
 Description=Run ai-report weekly
 
 [Timer]
+Unit=ai-report-run.service
 OnCalendar=Mon 06:00
 RandomizedDelaySec=15min
 Persistent=true
