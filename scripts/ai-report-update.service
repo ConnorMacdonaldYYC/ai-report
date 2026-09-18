@@ -7,4 +7,7 @@ After=network-online.target
 Type=oneshot
 User=connormacdonald
 WorkingDirectory=/home/connormacdonald/ai-report
+# Shared interpreter location so the aireport service user can execute the venv
+# (~/.local/share is mode 700 and unreachable by other users).
+Environment=UV_PYTHON_INSTALL_DIR=/opt/uv-python
 ExecStart=/bin/bash -c 'git pull --ff-only origin main && /home/connormacdonald/.local/bin/uv sync --frozen'
