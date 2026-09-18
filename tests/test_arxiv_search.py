@@ -89,6 +89,19 @@ class TestParseArxivResponse:
 class TestArxivSearchRetry:
     """Tests for retry/backoff logic in arxiv_search."""
 
+    @pytest.fixture(autouse=True)
+    def _no_pacing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Bypass the 3-second arXiv TOU pacing so tests run instantly."""
+        # Resolve the actual module object (not the shadowed function attribute
+        # on the parent package that `from ... import arxiv_search` creates).
+        import importlib
+
+        arxiv_mod = importlib.import_module("src.tools.arxiv_search")
+        monkeypatch.setattr(arxiv_mod, "_pace_arxiv_call", AsyncMock())
+        # Reset module-level pacing state between tests so the timestamp from a
+        # previous test doesn't leak in.
+        monkeypatch.setattr(arxiv_mod, "_arxiv_last_call_at", 0.0)
+
     @pytest.mark.asyncio
     async def test_success_on_first_try(self) -> None:
         """Should return results immediately when the first request succeeds."""
@@ -120,6 +133,70 @@ class TestArxivSearchRetry:
         assert "Test Paper" in result
         assert mock_get.call_count == 2
         mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_retries_on_406_then_succeeds(self) -> None:
+        """Should retry on 406 (arXiv uses 406 as a rate-limit response too)."""
+        responses = [
+            _make_response(406),
+            _make_response(200, VALID_XML),
+        ]
+        mock_get = AsyncMock(side_effect=responses)
+        with (
+            patch("httpx.AsyncClient.get", mock_get),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            result = await arxiv_search("test query", max_results=5)
+
+        assert "Test Paper" in result
+        assert mock_get.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_raises_runtime_error_on_exhausted_406_retries(self) -> None:
+        """Should raise RuntimeError when all retries are exhausted due to 406s."""
+        mock_get = AsyncMock(return_value=_make_response(406))
+        with (
+            patch("httpx.AsyncClient.get", mock_get),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(RuntimeError, match="rate-limited"),
+        ):
+            await arxiv_search("test query", max_results=5)
+
+    @pytest.mark.asyncio
+    async def test_retries_on_soft_rate_limit_body(self) -> None:
+        """Should retry when arXiv returns HTTP 200 with body 'Rate exceeded.'."""
+        responses = [
+            _make_response(200, "Rate exceeded."),
+            _make_response(200, VALID_XML),
+        ]
+        mock_get = AsyncMock(side_effect=responses)
+        with (
+            patch("httpx.AsyncClient.get", mock_get),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            result = await arxiv_search("test query", max_results=5)
+
+        assert "Test Paper" in result
+        assert mock_get.call_count == 2
+        mock_sleep.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_soft_rate_limit_body_match_is_case_insensitive(self) -> None:
+        """Soft-rate-limit detection should ignore leading whitespace and case."""
+        responses = [
+            _make_response(200, "  rate Exceeded. please slow down"),
+            _make_response(200, VALID_XML),
+        ]
+        mock_get = AsyncMock(side_effect=responses)
+        with (
+            patch("httpx.AsyncClient.get", mock_get),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await arxiv_search("test query", max_results=5)
+
+        assert "Test Paper" in result
+        assert mock_get.call_count == 2
 
     @pytest.mark.asyncio
     async def test_retries_on_500_then_succeeds(self) -> None:
@@ -196,6 +273,30 @@ class TestArxivSearchRetry:
         # With jitter fixed at 1.0, backoff = 3.0 * 2^attempt * 1.0
         sleep_calls = [call.args[0] for call in mock_sleep.call_args_list]
         assert sleep_calls == [3.0, 6.0, 12.0]
+
+    @pytest.mark.asyncio
+    async def test_sends_arxiv_safe_headers(self) -> None:
+        """Should pin Accept-Encoding/User-Agent to values arXiv accepts.
+
+        arXiv's API returns 406 when httpx's default multi-value Accept-Encoding
+        header is sent, and throttles unidentified clients. This test guards
+        against regressions by asserting the client is constructed with the
+        headers we deliberately set.
+        """
+        mock_get = AsyncMock(return_value=_make_response(200, VALID_XML))
+        with (
+            patch("httpx.AsyncClient.get", mock_get),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client_cls.return_value.__aenter__.return_value.get = mock_get
+            await arxiv_search("test query", max_results=5)
+
+        # Inspect the AsyncClient(...) construction kwargs.
+        _, kwargs = mock_client_cls.call_args
+        headers = kwargs.get("headers", {})
+        assert headers.get("Accept-Encoding") == "gzip"
+        assert "User-Agent" in headers
+        assert headers["User-Agent"]  # non-empty
 
     @pytest.mark.asyncio
     async def test_no_sleep_on_final_429_attempt(self) -> None:

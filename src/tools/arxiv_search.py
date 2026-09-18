@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import time
 from datetime import date, timedelta
 
 import httpx
@@ -11,6 +12,32 @@ logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 5
 INITIAL_BACKOFF_SECONDS = 3.0
+
+# arXiv's Terms of Use (https://info.arxiv.org/help/api/tou.html) require
+# "no more than one request every three seconds, and limit requests to a single
+# connection at a time." Enforced via this lock + the timestamp below.
+_ARXIV_MIN_INTERVAL_SEC = 3.0
+_arxiv_lock = asyncio.Lock()
+_arxiv_last_call_at: float = 0.0
+
+# arXiv's API uses both 429 and 406 as rate-limit responses, and additionally
+# returns HTTP 200 with body "Rate exceeded." for a soft rate-limit. The values
+# below centralize the detection.
+_RATE_LIMIT_STATUS_CODES: frozenset[int] = frozenset({429, 406})
+_SOFT_RATE_LIMIT_BODY_PREFIX = "rate exceeded"
+
+
+async def _pace_arxiv_call() -> None:
+    """Block until at least ``_ARXIV_MIN_INTERVAL_SEC`` has passed since the
+    last arXiv call. Honors the arXiv TOU's single-connection, 3-second rule.
+    """
+    global _arxiv_last_call_at
+    async with _arxiv_lock:
+        now = time.monotonic()
+        wait = _ARXIV_MIN_INTERVAL_SEC - (now - _arxiv_last_call_at)
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _arxiv_last_call_at = time.monotonic()
 
 
 async def arxiv_search(
@@ -52,18 +79,29 @@ async def arxiv_search(
         "sortOrder": "descending",
     }
 
+    # arXiv's API is picky about Accept-Encoding (it only advertises gzip/identity
+    # and returns 406 for the multi-encoding value httpx sends by default) and about
+    # User-Agent (it throttles unidentified clients). Pin both explicitly.
+    headers = {
+        "Accept-Encoding": "gzip",
+        "User-Agent": "ai-report/1.0 (https://github.com/connormacdonald/ai-report)",
+    }
+
     last_exception: Exception | None = None
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, headers=headers) as client:
         for attempt in range(MAX_RETRIES):
+            await _pace_arxiv_call()
             response = await client.get(url, params=params)
 
-            if response.status_code == 429:
+            # Hard rate-limit: arXiv returns 429 (and sometimes 406) when throttled.
+            if response.status_code in _RATE_LIMIT_STATUS_CODES:
                 if attempt == MAX_RETRIES - 1:
                     msg = "arXiv API rate-limited: all retries exhausted"
                     raise RuntimeError(msg)
                 backoff = INITIAL_BACKOFF_SECONDS * (2 ** attempt) * random.uniform(0.5, 1.5)
                 logger.warning(
-                    "arXiv API rate-limited (429), retrying in %.1fs (attempt %d/%d)",
+                    "arXiv API rate-limited (%d), retrying in %.1fs (attempt %d/%d)",
+                    response.status_code,
                     backoff,
                     attempt + 1,
                     MAX_RETRIES,
@@ -89,6 +127,23 @@ async def arxiv_search(
                     await asyncio.sleep(backoff)
                     continue
                 raise
+
+            # Soft rate-limit: arXiv returns HTTP 200 with body "Rate exceeded."
+            # when a secondary rate limiter trips. Treat it as retryable.
+            body_head = (response.text or "")[:64].strip().lower()
+            if body_head.startswith(_SOFT_RATE_LIMIT_BODY_PREFIX):
+                if attempt == MAX_RETRIES - 1:
+                    msg = "arXiv API rate-limited (soft): all retries exhausted"
+                    raise RuntimeError(msg)
+                backoff = INITIAL_BACKOFF_SECONDS * (2 ** attempt) * random.uniform(1.0, 2.0)
+                logger.warning(
+                    "arXiv API soft rate-limited, retrying in %.1fs (attempt %d/%d)",
+                    backoff,
+                    attempt + 1,
+                    MAX_RETRIES,
+                )
+                await asyncio.sleep(backoff)
+                continue
 
             return _parse_arxiv_response(response.text)
 
