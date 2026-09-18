@@ -28,6 +28,6 @@ PI ?= connorspi
 PI_PATH ?= ~/ai-report
 
 deploy:
-	scp .env $(PI):$(PI_PATH)/.env
-	ssh $(PI) "sudo chown root:aireport $(PI_PATH)/.env && sudo chmod 640 $(PI_PATH)/.env"
+	scp .env $(PI):/tmp/ai-report.env
+	ssh $(PI) "sudo mv /tmp/ai-report.env $(PI_PATH)/.env && sudo chown root:aireport $(PI_PATH)/.env && sudo chmod 640 $(PI_PATH)/.env"
 	@echo "Synced .env to $(PI):$(PI_PATH)/.env (root:aireport 640)"
