@@ -54,6 +54,10 @@ class Settings(BaseSettings):
 
     # Observability
     log_environment: str = "dev"
+    # Logfire write token — enables headless auth on servers where the
+    # browser-based `logfire auth` flow is not available. Blank on dev
+    # machines falls back to the cached `logfire auth` credentials.
+    logfire_token: str = Field(default="", validation_alias="LOGFIRE_TOKEN")
 
     # Quality control
     eval_threshold: float = 0.7

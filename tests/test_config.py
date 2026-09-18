@@ -179,6 +179,26 @@ class TestSettings:
             else:
                 os.environ.pop("ANTHROPIC_API_KEY", None)
 
+    # ── Logfire settings ──────────────────────────────────────────────────
+
+    def test_logfire_token_reads_from_env(self) -> None:
+        """Should read LOGFIRE_TOKEN from environment variable."""
+        original = os.environ.get("LOGFIRE_TOKEN")
+        try:
+            os.environ["LOGFIRE_TOKEN"] = "lf-test-token"
+            settings = Settings(_env_file=None)  # type: ignore[call-arg]
+            assert settings.logfire_token == "lf-test-token"
+        finally:
+            if original is not None:
+                os.environ["LOGFIRE_TOKEN"] = original
+            else:
+                os.environ.pop("LOGFIRE_TOKEN", None)
+
+    def test_logfire_token_defaults_blank(self) -> None:
+        """Logfire token should default to blank when not provided."""
+        settings = Settings(_env_file=None)  # type: ignore[call-arg]
+        assert settings.logfire_token == ""
+
     # ── Email settings ──────────────────────────────────────────────────
 
     def test_email_defaults(self) -> None:

@@ -415,6 +415,7 @@ def _setup_logfire(settings: Settings) -> None:
 
         logfire.configure(
             environment=settings.log_environment,
+            token=settings.logfire_token or None,
         )
         logfire.instrument_pydantic_ai()
         logger.info("Logfire instrumentation enabled")

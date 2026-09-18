@@ -1,11 +1,12 @@
 """Unit tests for orchestrator section-gathering degradation."""
 
+import pytest
 from pydantic_ai import ModelMessage, ModelResponse
 from pydantic_ai.models.function import AgentInfo
 from pydantic_ai.usage import RunUsage, UsageLimits
 
 from src.agents import build_agents
-from src.orchestrator import _gather_sections
+from src.orchestrator import _gather_sections, _setup_logfire
 from tests.utils import (
     ModelFn,
     build_test_settings,
@@ -72,3 +73,48 @@ class TestGatherSections:
             )
 
         assert sections == [None, None, None, None]
+
+
+class TestSetupLogfire:
+    """Tests for _setup_logfire token wiring."""
+
+    def _patch_logfire(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> dict[str, object]:
+        """Patch logfire.configure to record kwargs, and disable instrumentation.
+
+        Args:
+            monkeypatch: pytest monkeypatch fixture.
+
+        Returns:
+            Dict that fake configure() records its kwargs into.
+        """
+        recorded: dict[str, object] = {}
+        monkeypatch.setattr(
+            "logfire.configure", lambda **kwargs: recorded.update(kwargs)
+        )
+        monkeypatch.setattr("logfire.instrument_pydantic_ai", lambda: None)
+        return recorded
+
+    def test_passes_token_to_configure(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-blank logfire_token should be passed to logfire.configure."""
+        recorded = self._patch_logfire(monkeypatch)
+        settings = build_test_settings(logfire_token="lf-test-token")
+
+        _setup_logfire(settings)
+
+        assert recorded["token"] == "lf-test-token"
+        assert recorded["environment"] == "dev"
+
+    def test_blank_token_passes_none(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A blank logfire_token should pass None so dev falls back to cached creds."""
+        recorded = self._patch_logfire(monkeypatch)
+        settings = build_test_settings()
+
+        _setup_logfire(settings)
+
+        assert recorded["token"] is None
